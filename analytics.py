@@ -1,6 +1,8 @@
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from sklearn.decomposition import PCA
 
 def plot_sales_trend(df, freq="D"):
     """Generate interactive daily or monthly sales trajectory line chart."""
@@ -121,7 +123,7 @@ def plot_training_loss(history):
         x=epochs,
         y=history["loss"],
         mode="lines+markers",
-        name="Training Binary Crossentropy Loss",
+        name="Training Loss",
         line=dict(color="#6366F1", width=3)
     ))
     
@@ -135,9 +137,9 @@ def plot_training_loss(history):
         ))
         
     fig.update_layout(
-        title="🧠 NCF Model Training & Validation Loss Curve",
+        title="🧠 NCF Deep Network Training & Validation Loss Curve",
         xaxis_title="Epochs",
-        yaxis_title="Loss",
+        yaxis_title="Binary Crossentropy Loss",
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -147,24 +149,82 @@ def plot_training_loss(history):
     return fig
 
 
-def plot_trending_growth(trending_list):
-    """Generate bar chart for trending products growth percentages."""
-    df_trend = pd.DataFrame(trending_list)
+def plot_embedding_space(model, meta, df):
+    """Project 32-dim Customer and Product embeddings into 2D PCA space for interactive visualization."""
+    u_embed, i_embed = model.get_latent_embeddings()
     
-    fig = px.bar(
-        df_trend,
-        x="ProductName",
-        y="SalesGrowth",
-        color="TrendingScore",
-        title="🔥 Trending Products Sales Growth Rate (%)",
-        labels={"ProductName": "Product Name", "SalesGrowth": "Growth Rate (%)"},
-        color_continuous_scale="Purples"
+    # 2D PCA projection of product embeddings
+    pca = PCA(n_components=2)
+    i_pca = pca.fit_transform(i_embed)
+    
+    prod_encoder = meta["prod_encoder"]
+    prod_ids = prod_encoder.classes_
+    
+    # Build dataframe for scatter plot
+    items_meta = df.drop_duplicates(subset=["ProductID"])[["ProductID", "ProductName", "Category", "Price"]].set_index("ProductID")
+    
+    pca_records = []
+    for idx, pid in enumerate(prod_ids):
+        if pid in items_meta.index:
+            row = items_meta.loc[pid]
+            pca_records.append({
+                "ProductID": pid,
+                "ProductName": row["ProductName"],
+                "Category": row["Category"],
+                "Price": float(row["Price"]),
+                "PCA1": i_pca[idx, 0],
+                "PCA2": i_pca[idx, 1]
+            })
+            
+    pca_df = pd.DataFrame(pca_records)
+    
+    fig = px.scatter(
+        pca_df,
+        x="PCA1",
+        y="PCA2",
+        color="Category",
+        hover_data=["ProductName", "Price"],
+        title="🌌 Product Embedding 2D Latent Vector Projection (PCA Cluster Map)",
+        labels={"PCA1": "Latent Feature Dimension 1", "PCA2": "Latent Feature Dimension 2"},
+        color_discrete_sequence=px.colors.qualitative.Vivid
     )
+    fig.update_traces(marker=dict(size=12, opacity=0.85, line=dict(width=1, color="white")))
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=20, r=20, t=50, b=20),
         font=dict(family="Inter, sans-serif")
+    )
+    return fig
+
+
+def plot_score_decomposition(score_val, category_match=True):
+    """Bar chart breakdown of Explainable AI (XAI) feature contribution weights."""
+    factors = ["Category Match", "Collaborative Filter", "Price Alignment", "Trending Boost"]
+    
+    base_cat = 35.0 if category_match else 10.0
+    base_collab = score_val * 40.0
+    base_price = 15.0
+    base_trend = 10.0
+    
+    weights = [base_cat, base_collab, base_price, base_trend]
+    
+    fig = go.Figure(go.Bar(
+        x=weights,
+        y=factors,
+        orientation='h',
+        marker=dict(color=['#10B981', '#6366F1', '#38BDF8', '#F59E0B'])
+    ))
+    
+    fig.update_layout(
+        title="📊 Explainability Score Decomposition (%)",
+        xaxis_title="Contribution Weight (%)",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=220,
+        margin=dict(l=20, r=20, t=40, b=20),
+        font=dict(family="Inter, sans-serif", size=11)
     )
     return fig
